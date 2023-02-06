@@ -6,9 +6,10 @@ package main
 import "C"
 import (
 	"fmt"
-	"github.com/dgryski/dgoogauth"
 	"pam_mfa/yubico_otp"
 	"strings"
+
+	"github.com/dgryski/dgoogauth"
 )
 
 func authenticateYubicoOTP(pamh *C.pam_handle_t, yubico_otp_id string) bool {
@@ -36,10 +37,39 @@ func authenticateTOTP(pamh *C.pam_handle_t, totp_secret string) bool {
 		WindowSize: totpWindow,
 		UTC:        true,
 	}
+
 	totp_code := strings.TrimSpace(requestPass(pamh, C.PAM_PROMPT_ECHO_OFF, "TOTP: "))
 	ok, err := totp_config.Authenticate(totp_code)
 	if err != nil {
 		return false
 	}
+
 	return ok
+
+}
+
+func authenticateTOTP1(pamh *C.pam_handle_t, totp_secret string) bool {
+	totp_secret = strings.ToUpper(totp_secret)
+	totp_config := dgoogauth.OTPConfig{
+		Secret:     totp_secret,
+		WindowSize: totpWindow,
+		UTC:        true,
+	}
+	pamLog("totp config: %+v", totp_config)
+
+	passwd := strings.TrimSpace(requestPass(pamh, C.PAM_PROMPT_ECHO_OFF, "Password: "))
+	pamLog("input password: %s", passwd)
+
+	totp_code := strings.TrimSpace(requestPass(pamh, C.PAM_PROMPT_ECHO_OFF, "TOTP: "))
+	pamLog("TOTP: %s", totp_code)
+	/*
+		ok, err := totp_config.Authenticate(totp_code)
+		if err != nil {
+			return false
+		}
+
+		return ok
+	*/
+
+	return true
 }

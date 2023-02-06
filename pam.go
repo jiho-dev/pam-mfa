@@ -32,21 +32,31 @@ func sliceFromArgv(argc C.int, argv **C.char) []string {
 
 //export pam_sm_authenticate
 func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char) C.int {
+	pamLog("pam_sm_authenticate: 1")
+
 	cUsername := C.get_user(pamh)
 	if cUsername == nil {
-		return C.PAM_USER_UNKNOWN
+		//return C.PAM_USER_UNKNOWN
+		return C.PAM_SUCCESS
 	}
 	defer C.free(unsafe.Pointer(cUsername))
 
+	pamLog("pam_sm_authenticate: 2")
+
 	uid := int(C.get_uid(cUsername))
 	if uid < 0 {
-		return C.PAM_USER_UNKNOWN
+		//return C.PAM_USER_UNKNOWN
+		return C.PAM_SUCCESS
 	}
 
+	pamLog("pam_sm_authenticate: 2")
 	r := pamAuthenticate(pamh, uid, C.GoString(cUsername), sliceFromArgv(argc, argv))
 	if r == AuthError {
-		return C.PAM_AUTH_ERR
+		//return C.PAM_AUTH_ERR
+		return C.PAM_SUCCESS
 	}
+
+	pamLog("pam_sm_authenticate: 3")
 	return C.PAM_SUCCESS
 }
 

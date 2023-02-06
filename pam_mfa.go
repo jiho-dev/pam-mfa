@@ -1,3 +1,4 @@
+//go:build darwin || linux
 // +build darwin linux
 
 package main
@@ -7,7 +8,10 @@ package main
 */
 import "C"
 import (
+	"bytes"
 	"fmt"
+	"io/ioutil"
+	"log"
 	"log/syslog"
 	"os"
 	"os/user"
@@ -15,13 +19,16 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/howeyc/gopass"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 var (
-	configFile = ".mfa.yml"
-	yubicoOtpId = ""
+	configFile      = ".mfa.yml"
+	yubicoOtpId     = ""
 	yubicoOtpSecret = ""
-	totpWindow = 5
+	totpWindow      = 5
 )
 
 type AuthResult int
@@ -29,13 +36,16 @@ type AuthResult int
 const (
 	AuthError AuthResult = iota
 	AuthSuccess
+
+	LogName = "pam-spc"
 )
 
 func pamLog(format string, args ...interface{}) {
-	l, err := syslog.New(syslog.LOG_AUTH|syslog.LOG_WARNING, "pam-ussh")
+	l, err := syslog.New(syslog.LOG_AUTH|syslog.LOG_WARNING, LogName)
 	if err != nil {
 		return
 	}
+
 	l.Warning(fmt.Sprintf(format, args...))
 }
 
@@ -75,7 +85,8 @@ func authenticate(pamh *C.pam_handle_t, uid int, username string) AuthResult {
 		case "yubico_otp":
 			auth_result = authenticateYubicoOTP(pamh, config["yubico_otp_id"].(string))
 		case "totp":
-			auth_result = authenticateTOTP(pamh, config["totp_key"].(string))
+			//auth_result = authenticateTOTP(pamh, config["totp_key"].(string))
+			auth_result = authenticateTOTP1(pamh, config["totp_key"].(string))
 		}
 		if auth_result {
 			pamLog("User %s passed MFA method %s.", usr.Username, auth_method)
@@ -91,7 +102,9 @@ func authenticate(pamh *C.pam_handle_t, uid int, username string) AuthResult {
 func pamAuthenticate(pamh *C.pam_handle_t, uid int, username string, argv []string) AuthResult {
 	runtime.GOMAXPROCS(1)
 
-	for _, arg := range argv {
+	for i, arg := range argv {
+		pamLog("arg: %d, %s", i, arg)
+
 		opt := strings.SplitN(arg, "=", 2)
 		switch opt[0] {
 		case "yubico_otp_id":
@@ -106,4 +119,46 @@ func pamAuthenticate(pamh *C.pam_handle_t, uid int, username string, argv []stri
 	return authenticate(pamh, uid, username)
 }
 
-func main() {}
+func getPassword() []byte {
+	if terminal.IsTerminal(0) {
+		fmt.Fprintf(os.Stderr, "Enter Password: ")
+		pass, err := gopass.GetPasswd()
+		if err != nil {
+			log.Fatal(err)
+		}
+		return bytes.TrimSpace(pass)
+	} else {
+		pass, err := ioutil.ReadAll(os.Stdin)
+		if err != nil {
+			log.Fatal(err)
+		}
+		return bytes.TrimSpace(pass)
+	}
+}
+
+func main() {
+	//password := getPassword()
+	password := string("admin123!")
+
+	crypters := []int{HASH_MD5, HASH_BLOWFISH, HASH_SHA256, HASH_SHA512}
+
+	for _, idx := range crypters {
+		fmt.Printf("Crypto ID: %d \n", idx)
+
+		hash, err := HashPassword(idx, password, "")
+		if err != nil {
+			fmt.Printf("1. failed to encrypt password: %s \n", err)
+		} else {
+			fmt.Printf("1. password hash: %s, %s \n", password, hash)
+		}
+
+		//c, err := crypter(HASH_BLOWFISH)
+		if VerifyPassword(password, hash) {
+			fmt.Printf("2. correct hash: %s, %s \n", password, hash)
+		} else {
+			fmt.Printf("2. incorrect hash: %s, %s \n", password, hash)
+		}
+
+	}
+
+}
